@@ -38,6 +38,9 @@ public class LDIFAttr2DirAttrCompare {
             List<String> attributeValues = new ArrayList<>();
 
             Hashtable<String, String> env = new Hashtable<>();
+            env.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
+            env.put("java.naming.ldap.factory.socket",
+                    "com.pointblue.ldifutil.JndiSocketFactory");
             env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
             env.put(Context.PROVIDER_URL, ldapUrl);
             env.put(Context.SECURITY_AUTHENTICATION, "simple");
