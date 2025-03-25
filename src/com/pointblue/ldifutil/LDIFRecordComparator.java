@@ -66,6 +66,11 @@ public class LDIFRecordComparator {
                     }
                 } else if (currentRecord != null) {
                     if (line.startsWith(" ")) {
+                         if (currentValue.length() == 0 ) {
+                            //continued DN
+                            currentDN += line.trim();
+                            continue;
+                        }
                         // Multi-line attribute continuation
                         currentValue.append("\n").append(line.trim());
                     } else {

@@ -38,9 +38,11 @@ public class LDIFAttr2DirAttrCompare {
             List<String> attributeValues = new ArrayList<>();
 
             Hashtable<String, String> env = new Hashtable<>();
-            env.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
-            env.put("java.naming.ldap.factory.socket",
-                    "com.pointblue.ldifutil.JndiSocketFactory");
+            if(ldapUrl.startsWith("ldaps://")) {
+                env.put(javax.naming.Context.SECURITY_PROTOCOL, "ssl");
+                env.put("java.naming.ldap.factory.socket",
+                        "com.pointblue.ldifutil.JndiSocketFactory");
+            }
             env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
             env.put(Context.PROVIDER_URL, ldapUrl);
             env.put(Context.SECURITY_AUTHENTICATION, "simple");
@@ -55,6 +57,10 @@ public class LDIFAttr2DirAttrCompare {
                         compareAndPrint(currentDN, attributeValues, attributeToExtract, ctx, baseDN);
                     }
                     currentDN = line.trim();
+                    if(!currentDN.endsWith(baseDN)){
+                        line = reader.readLine();
+                        currentDN += line.trim();
+                    }
                     inRecord = true;
                     inMultiLineValue = false;
                     attributeValues.clear();

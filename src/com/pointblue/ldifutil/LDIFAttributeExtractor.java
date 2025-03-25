@@ -30,7 +30,7 @@ public class LDIFAttributeExtractor {
             String currentDN = "";
             boolean inMultiLineValue = false;
             List<String> attributeValues = new ArrayList<>();
-
+            boolean inDN = false;
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("dn:")) {
                     // New record starts
@@ -41,6 +41,7 @@ public class LDIFAttributeExtractor {
                     inRecord = true;
                     inMultiLineValue = false;
                     attributeValues.clear();
+                    inDN = true;
                 } else if (line.isEmpty()) {
                     // End of record
                     if (!currentDN.isEmpty() && !attributeValues.isEmpty()) {
@@ -48,8 +49,14 @@ public class LDIFAttributeExtractor {
                     }
                     inRecord = false;
                     inMultiLineValue = false;
+                    inDN = false;
                 } else if (inRecord) {
-                    if (line.startsWith(" ")) {
+                    if (currentDN.length() >0 && line.startsWith(" ")) {
+                        if (inDN) {
+                            //continued DN
+                            currentDN += line.trim();
+                            continue;
+                        }
                         // Multi-line value continuation
                         if (inMultiLineValue && !attributeValues.isEmpty()) {
                             String lastValue = attributeValues.remove(attributeValues.size() - 1);
@@ -69,6 +76,7 @@ public class LDIFAttributeExtractor {
                         } else {
                             // Malformed line, ignore or handle as needed
                         }
+                        inDN = false;
                     }
                 }
             }

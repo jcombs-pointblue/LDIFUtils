@@ -81,6 +81,10 @@ public class LDIFAttributeComparator {
                             currentValue = new StringBuilder();
                         }
                     }
+                }else if (line.startsWith(" ") && currentRecord == null) {
+                    //continued DN
+                    currentDN += line.trim();
+
                 }
             }
             // Handle the last record if the file does not end with a newline
