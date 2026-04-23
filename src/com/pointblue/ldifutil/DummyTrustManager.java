@@ -3,7 +3,7 @@
 //  This class is used so that LDAPS connections can be made without verifying the cert
 //
 //  Created by Jerry Combs on 7/11/05.
-//  Copyright 2005 __MyCompanyName__. All rights reserved.
+//  Copyright 2026 Pointblue Technology LLC.
 //
 package com.pointblue.ldifutil;
 

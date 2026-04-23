@@ -1,11 +1,15 @@
 package com.pointblue.ldifutil;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 /**
  * The `LDIFAttributeExtractor` class extracts specified attributes from an LDIF file.
- * It reads the input LDIF file, extracts the specified attribute values, and prints them along with their DNs.
+ * It reads the input LDIF file, extracts the specified attribute values (including any
+ * wrapped continuation lines that belong to them), and prints them along with their DNs.
  */
 public class LDIFAttributeExtractor {
 
@@ -17,70 +21,67 @@ public class LDIFAttributeExtractor {
      */
     public static void main(String[] args) {
         if (args.length != 2) {
-            System.out.println("Usage: java com.pointblue.ldifutil.LDIFAttr2DirAttrCompare <input-file> <attribute-to-extract>");
+            System.out.println("Usage: java com.pointblue.ldifutil.LDIFAttributeExtractor <input-file> <attribute-to-extract>");
             System.exit(1);
         }
 
         String inputFile = args[0];
-        String attributeToExtract = args[1].toLowerCase();  // Case-insensitive attribute name
+        String attributeToExtract = args[1].toLowerCase();
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile))) {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(inputFile), StandardCharsets.UTF_8)) {
             String line;
-            boolean inRecord = false;
             String currentDN = "";
-            boolean inMultiLineValue = false;
-            List<String> attributeValues = new ArrayList<>();
+            boolean inRecord = false;
             boolean inDN = false;
+            boolean inTargetValue = false;
+            List<String> attributeValues = new ArrayList<>();
+
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("dn:")) {
-                    // New record starts
                     if (!currentDN.isEmpty() && !attributeValues.isEmpty()) {
                         printDNAndValues(currentDN, attributeValues);
                     }
                     currentDN = line.trim();
                     inRecord = true;
-                    inMultiLineValue = false;
-                    attributeValues.clear();
                     inDN = true;
+                    inTargetValue = false;
+                    attributeValues.clear();
                 } else if (line.isEmpty()) {
-                    // End of record
                     if (!currentDN.isEmpty() && !attributeValues.isEmpty()) {
                         printDNAndValues(currentDN, attributeValues);
                     }
                     inRecord = false;
-                    inMultiLineValue = false;
                     inDN = false;
+                    inTargetValue = false;
+                    currentDN = "";
+                    attributeValues.clear();
                 } else if (inRecord) {
-                    if (currentDN.length() >0 && line.startsWith(" ")) {
+                    if (line.startsWith(" ")) {
+                        // Per RFC 2849, unfolding consumes the newline and the single leading space.
+                        String continuation = line.substring(1);
                         if (inDN) {
-                            //continued DN
-                            currentDN += line.trim();
-                            continue;
-                        }
-                        // Multi-line value continuation
-                        if (inMultiLineValue && !attributeValues.isEmpty()) {
-                            String lastValue = attributeValues.remove(attributeValues.size() - 1);
-                            attributeValues.add(lastValue + "\n" + line.trim());
+                            currentDN += continuation;
+                        } else if (inTargetValue && !attributeValues.isEmpty()) {
+                            int lastIdx = attributeValues.size() - 1;
+                            attributeValues.set(lastIdx, attributeValues.get(lastIdx) + continuation);
                         }
                     } else {
-                        // New attribute line
+                        inDN = false;
                         String[] parts = line.split(":", 2);
                         if (parts.length == 2) {
                             String attributeName = parts[0].trim().toLowerCase();
                             if (attributeName.equals(attributeToExtract)) {
-                                inMultiLineValue = parts[1].trim().isEmpty();
+                                inTargetValue = true;
                                 attributeValues.add(parts[1].trim());
                             } else {
-                                inMultiLineValue = false;
+                                inTargetValue = false;
                             }
                         } else {
-                            // Malformed line, ignore or handle as needed
+                            inTargetValue = false;
                         }
-                        inDN = false;
                     }
                 }
             }
-            // Handle the last record if not ended with an empty line
             if (!currentDN.isEmpty() && !attributeValues.isEmpty()) {
                 printDNAndValues(currentDN, attributeValues);
             }

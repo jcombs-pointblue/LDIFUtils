@@ -1,11 +1,15 @@
 package com.pointblue.ldifutil;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 /**
  * The `LDIFAttributeComparator` class provides functionality to compare attributes between two LDIF files.
  * It reads the LDIF files, parses the records, and compares the specified attribute or all attributes if none is specified.
+ * Multi-valued attributes are compared as unordered sets (LDAP attribute values have no inherent order).
  */
 public class LDIFAttributeComparator {
 
@@ -32,65 +36,66 @@ public class LDIFAttributeComparator {
     }
 
     /**
-     * Parses an LDIF file and returns a map of records.
-     *
-     * @param fileName The name of the LDIF file to parse.
-     * @return A map where the key is the DN and the value is another map of attributes and their values.
+     * Parses an LDIF file and returns a map of records keyed by the (decoded) DN.
+     * Handles folded DN and attribute lines per RFC 2849 and base64-encoded `dn::` entries.
      */
     private static Map<String, Map<String, List<String>>> parseLDIF(String fileName) {
         Map<String, Map<String, List<String>>> records = new HashMap<>();
         Map<String, List<String>> currentRecord = null;
-        String currentDN = "";
+        StringBuilder currentDN = new StringBuilder();
         String currentAttribute = "";
         StringBuilder currentValue = new StringBuilder();
+        boolean inDN = false;
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(fileName), StandardCharsets.UTF_8)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("dn:")) {
-                    if (!currentDN.isEmpty()) {
+                    if (currentDN.length() > 0) {
                         addValueToRecord(currentRecord, currentAttribute, currentValue);
-                        records.put(currentDN, currentRecord);
+                        records.put(decodeDN(currentDN.toString()), currentRecord);
                     }
-                    currentDN = line.split(":", 2)[1].trim();
+                    currentDN.setLength(0);
+                    currentDN.append(line);
                     currentRecord = new HashMap<>();
                     currentAttribute = "";
                     currentValue = new StringBuilder();
+                    inDN = true;
                 } else if (line.isEmpty()) {
-                    if (!currentDN.isEmpty()) {
+                    if (currentDN.length() > 0) {
                         addValueToRecord(currentRecord, currentAttribute, currentValue);
-                        records.put(currentDN, currentRecord);
-                        currentDN = "";
+                        records.put(decodeDN(currentDN.toString()), currentRecord);
+                        currentDN.setLength(0);
                         currentRecord = null;
                         currentAttribute = "";
                         currentValue = new StringBuilder();
                     }
+                    inDN = false;
                 } else if (currentRecord != null) {
                     if (line.startsWith(" ")) {
-                        // Multi-line attribute continuation
-                        currentValue.append("\n").append(line.trim());
+                        String continuation = line.substring(1);
+                        if (inDN) {
+                            currentDN.append(continuation);
+                        } else {
+                            currentValue.append(continuation);
+                        }
                     } else {
+                        inDN = false;
                         addValueToRecord(currentRecord, currentAttribute, currentValue);
                         String[] parts = line.split(":", 2);
                         if (parts.length == 2) {
                             currentAttribute = parts[0].trim().toLowerCase();
                             currentValue = new StringBuilder(parts[1].trim());
                         } else {
-                            // Handle malformed lines if necessary
                             currentAttribute = "";
                             currentValue = new StringBuilder();
                         }
                     }
-                }else if (line.startsWith(" ") && currentRecord == null) {
-                    //continued DN
-                    currentDN += line.trim();
-
                 }
             }
-            // Handle the last record if the file does not end with a newline
-            if (!currentDN.isEmpty()) {
+            if (currentDN.length() > 0) {
                 addValueToRecord(currentRecord, currentAttribute, currentValue);
-                records.put(currentDN, currentRecord);
+                records.put(decodeDN(currentDN.toString()), currentRecord);
             }
         } catch (IOException e) {
             System.err.println("Error reading file " + fileName + ": " + e.getMessage());
@@ -99,25 +104,18 @@ public class LDIFAttributeComparator {
         return records;
     }
 
-    /**
-     * Adds a value to the current record.
-     *
-     * @param record The current record map.
-     * @param attribute The attribute name.
-     * @param value The attribute value.
-     */
+    private static String decodeDN(String dnLine) {
+        if (dnLine.startsWith("dn::")) {
+            return new String(Base64.getDecoder().decode(dnLine.substring(4).trim()), StandardCharsets.UTF_8);
+        }
+        return dnLine.substring(3).trim();
+    }
+
     private static void addValueToRecord(Map<String, List<String>> record, String attribute, StringBuilder value) {
         if (attribute.isEmpty() || value.length() == 0) return;
         record.computeIfAbsent(attribute, k -> new ArrayList<>()).add(value.toString());
     }
 
-    /**
-     * Compares the records from two LDIF files.
-     *
-     * @param records1 The records from the first LDIF file.
-     * @param records2 The records from the second LDIF file.
-     * @param attributeToCompare The attribute to compare, or null to compare all attributes.
-     */
     private static void compareRecords(Map<String, Map<String, List<String>>> records1, Map<String, Map<String, List<String>>> records2, String attributeToCompare) {
         Set<String> allDNs = new HashSet<>(records1.keySet());
         allDNs.addAll(records2.keySet());
@@ -127,40 +125,34 @@ public class LDIFAttributeComparator {
             Map<String, List<String>> record2 = records2.get(dn);
 
             if (attributeToCompare == null) {
-                // Compare all attributes
                 if (record1 == null || record2 == null || !areRecordsEqual(record1, record2)) {
                     System.out.println(dn);
                 }
             } else {
-                // Compare only the specified attribute
                 List<String> values1 = record1 != null ? record1.get(attributeToCompare) : null;
                 List<String> values2 = record2 != null ? record2.get(attributeToCompare) : null;
-
-                if (values1 == null || values2 == null || !values1.equals(values2)) {
+                if (values1 == null && values2 == null) {
+                    continue; // attribute absent in both — not a difference
+                }
+                if (values1 == null || values2 == null || !valuesEqual(values1, values2)) {
                     System.out.println(dn);
                 }
             }
         }
     }
 
-    /**
-     * Checks if two records are equal.
-     *
-     * @param record1 The first record.
-     * @param record2 The second record.
-     * @return True if the records are equal, false otherwise.
-     */
     private static boolean areRecordsEqual(Map<String, List<String>> record1, Map<String, List<String>> record2) {
         if (record1.size() != record2.size()) return false;
-
         for (Map.Entry<String, List<String>> entry : record1.entrySet()) {
-            List<String> values1 = entry.getValue();
             List<String> values2 = record2.get(entry.getKey());
-
-            if (values2 == null || !values1.equals(values2)) {
+            if (values2 == null || !valuesEqual(entry.getValue(), values2)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean valuesEqual(List<String> a, List<String> b) {
+        return new HashSet<>(a).equals(new HashSet<>(b));
     }
 }

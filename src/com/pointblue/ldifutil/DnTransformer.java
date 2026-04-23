@@ -1,6 +1,10 @@
 package com.pointblue.ldifutil;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Base64;
 
 /**
  * The `DnTransformer` class processes an LDIF file and transforms the DN (Distinguished Name) paths.
@@ -30,8 +34,8 @@ public class DnTransformer {
         String outputFile = args[1];
         String newDnPath = args[2];
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
-             BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(inputFile), StandardCharsets.UTF_8);
+             BufferedWriter writer = Files.newBufferedWriter(Paths.get(outputFile), StandardCharsets.UTF_8)) {
 
             String line;
             StringBuilder currentDnLine = null;
@@ -87,24 +91,23 @@ public class DnTransformer {
      * @return The transformed DN line.
      */
     private static String transformDnLine(String dnLine, String newDnPath) {
-        // Extract the DN value part (after "dn: ")
-        String dnValue = dnLine.substring(4).trim();
+        // Support both "dn: <value>" and "dn:: <base64>" forms; preserve the form on output.
+        boolean isBase64 = dnLine.startsWith("dn::");
+        String dnValue = isBase64
+                ? new String(Base64.getDecoder().decode(dnLine.substring(4).trim()), StandardCharsets.UTF_8)
+                : dnLine.substring(3).trim();
 
-        // Find the first comma which separates the leftmost component from the rest
         int commaIndex = dnValue.indexOf(',');
-
         if (commaIndex == -1) {
             // No comma found, this is a top-level entry, just return the original line
             return dnLine;
         }
 
-        // Extract the leftmost component (e.g., "cn=jcombs")
         String leftmostComponent = dnValue.substring(0, commaIndex);
-
-        // Combine the leftmost component with the new path
         String transformedDn = leftmostComponent + "," + newDnPath;
 
-        // Return the complete transformed line
-        return "dn: " + transformedDn;
+        return isBase64
+                ? "dn:: " + Base64.getEncoder().encodeToString(transformedDn.getBytes(StandardCharsets.UTF_8))
+                : "dn: " + transformedDn;
     }
 }

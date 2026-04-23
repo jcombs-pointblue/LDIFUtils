@@ -1,10 +1,14 @@
 package com.pointblue.ldifutil;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 /**
  * The `StripAttributes` class processes an LDIF file to remove specified attributes.
- * It reads the input LDIF file, removes the specified attributes, and writes the result to an output file.
+ * It reads the input LDIF file, removes the specified attributes (including any wrapped
+ * continuation lines that belong to them), and writes the result to an output file.
  */
 public class StripAttributes {
 
@@ -16,7 +20,7 @@ public class StripAttributes {
      */
     public static void main(String[] args) {
         if (args.length != 3) {
-            System.out.println("Usage: java StripAttributes <input-file> <output-file> <attributes-to-remove>");
+            System.out.println("Usage: java com.pointblue.ldifutil.StripAttributes <input-file> <output-file> <attributes-to-remove>");
             System.exit(1);
         }
 
@@ -24,43 +28,38 @@ public class StripAttributes {
         String outputFile = args[1];
         String[] attributesToRemove = args[2].split(",");
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile));
-             BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(inputFile), StandardCharsets.UTF_8);
+             BufferedWriter writer = Files.newBufferedWriter(Paths.get(outputFile), StandardCharsets.UTF_8)) {
 
             String line;
             boolean inRecord = false;
-            boolean inMultiLineValue = false;
             String currentAttribute = "";
 
             while ((line = reader.readLine()) != null) {
                 if (line.startsWith("dn:")) {
                     inRecord = true;
-                    inMultiLineValue = false;
                     currentAttribute = "";
                     writer.write(line + System.lineSeparator());
                 } else if (line.isEmpty()) {
                     inRecord = false;
-                    inMultiLineValue = false;
                     currentAttribute = "";
                     writer.write(System.lineSeparator());
                 } else if (inRecord) {
                     if (line.startsWith(" ")) {
-                        // This line is a continuation of a multi-line attribute
-                        if (!inMultiLineValue || !shouldRemove(currentAttribute, attributesToRemove)) {
+                        // Continuation belongs to the current attribute (or to the DN, if
+                        // currentAttribute is "" because we just saw the dn: line).
+                        if (!shouldRemove(currentAttribute, attributesToRemove)) {
                             writer.write(line + System.lineSeparator());
                         }
                     } else {
-                        // New attribute line
-                        inMultiLineValue = false;
                         String[] parts = line.split(":", 2);
                         if (parts.length == 2) {
                             currentAttribute = parts[0].trim().toLowerCase();
-                            inMultiLineValue = parts[1].trim().isEmpty();  // If value is empty, next line might be continuation
                             if (!shouldRemove(currentAttribute, attributesToRemove)) {
                                 writer.write(line + System.lineSeparator());
                             }
                         } else {
-                            // Malformed line, write it as is
+                            currentAttribute = "";
                             writer.write(line + System.lineSeparator());
                         }
                     }
