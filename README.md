@@ -71,7 +71,7 @@ java com.pointblue.ldifutil.LDIFAttributeComparator file1.ldif file2.ldif
 
 ### LDIFAttr2DirAttrCompare
 
-Compares attributes from an LDIF file with corresponding attributes in a live LDAP directory.
+Compares attributes from an LDIF file with corresponding attributes in a live LDAP directory. Trusts all TLS certificates, so it works against self-signed `ldaps://` endpoints.
 
 ```sh
 java com.pointblue.ldifutil.LDIFAttr2DirAttrCompare <input-file> <attribute-to-extract> <ldap-url> <base-dn> <ldap-username> <ldap-password>
@@ -82,12 +82,33 @@ Example:
 java com.pointblue.ldifutil.LDIFAttr2DirAttrCompare users.ldif mail ldap://ldap.example.com:389 dc=example,dc=com cn=admin,dc=example,dc=com secretpassword
 ```
 
+### DnTransformer
+
+Rewrites the DN path of every entry in an LDIF file while preserving the leftmost RDN (e.g. `cn=jcombs`). Useful for moving a container's contents to a new location. The input LDIF should contain entries from a single container, since every DN is rewritten with the same new path.
+
+```sh
+java com.pointblue.ldifutil.DnTransformer <input-file> <output-file> <new-dn-path>
+```
+
+Example:
+```sh
+# "cn=jcombs,ou=foo,o=bar" becomes "cn=jcombs,ou=do,o=re"
+java com.pointblue.ldifutil.DnTransformer input.ldif output.ldif "ou=do,o=re"
+```
+
 ## Building
 
 Compile the source files using `javac`:
 
 ```sh
 javac -d bin src/com/pointblue/ldifutil/*.java
+```
+
+Or build a runnable JAR:
+
+```sh
+javac -d bin src/com/pointblue/ldifutil/*.java
+jar cf ldifutils.jar -C bin .
 ```
 
 ## Running
@@ -97,6 +118,14 @@ After compilation, you can run the utilities using the Java command:
 ```sh
 java -cp bin com.pointblue.ldifutil.UtilityName [arguments]
 ```
+
+Or, using the JAR:
+
+```sh
+java -cp ldifutils.jar com.pointblue.ldifutil.UtilityName [arguments]
+```
+
+A prebuilt JAR is also attached to each [GitHub release](../../releases).
 
 ## License
 
